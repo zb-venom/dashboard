@@ -30,6 +30,12 @@ app.use(router);
 app.use(express.static(__dirname + "/public/"));
 app.get(/.*/, (req, res) => res.sendFile(__dirname + "/public/index.html"));
 
+app.route("/*").all((req, res) => {
+  res.status(404).send({
+    message: "Page not found",
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
