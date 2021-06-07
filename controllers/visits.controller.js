@@ -1,9 +1,11 @@
 const Visits = require("../models/Visits");
+const { google } = require("googleapis");
 
-exports.getVisits = async (req, res) => {
+async function getVisit(type) {
   let data = [];
   let temp;
-  switch (req.params.type) {
+  1;
+  switch (type) {
     case "number_of_guests_per_city":
       data = await Visits.aggregate([
         {
@@ -73,6 +75,12 @@ exports.getVisits = async (req, res) => {
       ]);
       break;
   }
+  return data;
+}
+
+exports.getVisits = async (req, res) => {
+  let data = [];
+  data = await getVisit(req.params.type);
   res.json({
     data,
   });
@@ -95,4 +103,70 @@ exports.addVisits = async (req, res) => {
     // visits.save();
   }
   res.json({ data });
+};
+
+exports.exportVisits = async (req, res) => {
+  const auth0 = new google.auth.GoogleAuth({
+    keyFile: "credentials.json",
+    scopes: [
+      "https://www.googleapis.com/auth/cloud-platform",
+      "https://www.googleapis.com/auth/drive",
+    ],
+  });
+  const auth = await auth0.getClient();
+  const sheets = await google.sheets({ version: "v4", auth });
+  const newSheet = await sheets.spreadsheets.create({
+    resource: {
+      properties: {
+        title: req.params.type,
+      },
+    },
+    fields: "spreadsheetId",
+  });
+  const data = await getVisit(req.params.type);
+  const range = `Sheet1!A1`;
+  const majorDimension = "ROWS";
+  let values = [];
+  switch (req.params.type) {
+    case "number_of_guests_per_city":
+      values.push(["город", "кол-во гостей"]);
+      break;
+    case "average_visit_summary_per_city":
+      values.push(["город", "средння сумма"]);
+      break;
+    case "visit_summary_per_city":
+      values.push(["город", "сумма"]);
+      break;
+    case "visit_summary_per_guest":
+      values.push(["гость", "сумма"]);
+      break;
+  }
+  data.forEach((data) => {
+    values.push([
+      data.city || data.guest_id,
+      data.number_of_guests || data.average_visit_summary || data.visit_summary,
+    ]);
+  });
+  const write = await sheets.spreadsheets.values.append({
+    spreadsheetId: newSheet.data.spreadsheetId,
+    range,
+    valueInputOption: "USER_ENTERED",
+    resource: {
+      majorDimension,
+      values,
+    },
+  });
+  const drive = await google.drive({ version: "v3", auth });
+  const perm = drive.permissions.create({
+    fileId: newSheet.data.spreadsheetId,
+    resource: {
+      value: null,
+      type: "anyone",
+      role: "reader",
+    },
+  });
+
+  res.json({
+    url: `https://docs.google.com/spreadsheets/d/${newSheet.data.spreadsheetId}`,
+  });
 };
